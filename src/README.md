@@ -1,1 +1,0 @@
-# sprig-mpy-firmware
