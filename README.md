@@ -14,7 +14,7 @@ This isn't being made as any sort of replacement or anything, just a fun project
 ## TODO:
 - [x] Create basic setup with settings and launcher
 - [ ] Add audio support
-~~- [ ] Add network support~~
+- ~~[ ] Add network support~~
 - [ ] Add wired serial communication
 - [ ] Graphics helpers
     - [ ] Tilemap
