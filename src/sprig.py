@@ -14,6 +14,7 @@ from audio import Audio
 
 class Sprig:
     def __init__(self):
+        gc.collect()
         self.spi = SPI(0, baudrate=40000000, sck=Pin(18), mosi=Pin(19))
         self.display = Display(self.spi, dc=Pin(22), cs=Pin(20), rst=Pin(26), width=160, height=128, mirror=True, bgr=False, rotation=90)
         self.fbuf = framebuf.FrameBuffer(bytearray(160 * 128 * 2), 160, 128, framebuf.RGB565)
@@ -69,6 +70,7 @@ class Sprig:
         self.apps = []
         for app in os.listdir('/apps'):
             if app.endswith('.py'):
+                print('Found ' + app)
                 temp_app = __import__('/apps/'+ app.replace('.py', '')).app
                 self.apps.append({
                     'path': app.replace('.py', ''),
@@ -101,6 +103,8 @@ class Sprig:
             return False
 
     def splash(self):
+        gc.collect()
+        print(gc.get_stats())
         splash = BMPReader('splash.bmp')
 
         splash_buf = framebuf.FrameBuffer(bytearray(160 * 128 * 2), 160, 128, framebuf.RGB565)
@@ -168,12 +172,45 @@ class Sprig:
         except OSError:
             return False
 
+from png import Reader as PngReader
+
 class Tilemap:
-    def __init__(self, width: int, height: int):
+    def __init__(self, sprig: Sprig, width: int, height: int, buf: framebuf.FrameBuffer):
         self.width = width
         self.height = height
-        
+        self._buf = buf
+        self._tilebuf = framebuf.FrameBuffer(bytearray(16 * 16 * 2), 16, 16, framebuf.RGB565)
+        self._sprig = sprig
+
+    def draw_tile_by_id(self, id = 0, x = 0, y = 0):
+        self._tilebuf.blit(self._buf, -((id*16) % self.width), -math.floor((id*16) / self.width))
+        self._sprig.fbuf.blit(self._tilebuf, x, y)
+
+    def draw_tile_by_xy(self, tile_x = 0, tile_y = 0, x = 0, y = 0):
+        self._tilebuf.blit(self._buf, -x*16, -y*16)
+        self._sprig.fbuf.blit(self._tilebuf, x, y)
+
     @staticmethod
     def from_bmp(path: str):
         reader = BMPReader(path)
+        buf = framebuf.FrameBuffer(bytearray(reader.width * reader.height * 2), reader.width, reader.height, framebuf.RGB565)
+        for i in range(reader.width * reader.height):
+            (pixel, x, y) = reader.read_pixel()
+            buf.pixel(pixel, x, y)
+
+        return Tilemap(reader.width, reader.height, buf)
+
+    @staticmethod
+    def from_png(path: str):
+        reader = PngReader(path)
+        (width, height, pixels, metadata) = reader.read_flat()
+        buf = framebuf.FrameBuffer(bytearray(width*height * 2), width, height, framebuf.RGB565)
+        for i in range(width*height):
+            alpha = pixels[i*4+3]
+            pixel = color565(pixels[i*4], pixels[i*4+1], pixels[i*4+2])
+            if alpha < 127:
+                continue
+            buf.pixel(pixel, i%width, math.floor(i/width))
+
+        return Tilemap(reader.width, reader.height, buf)
 
