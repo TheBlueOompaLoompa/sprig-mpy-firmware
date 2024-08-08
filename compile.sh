@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-for f in src/*; do
-  echo "$f";
-  # further processing
+
+mkdir -p build
+rm -rf build/*
+cp -r src/* build/
+for f in build/*; do
+    if [[ $f == *.py ]]
+    then
+        mpy-cross -march=armv6m $f
+        rm $f
+    fi
 done
-mpy-cross -march=armv6m
