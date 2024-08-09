@@ -10,7 +10,7 @@ from sprig import Tilemap
 from ili9341 import color565
 
 def setup(sprig: Sprig):
-    app.data['tilemap'] = Tilemap.from_png("/apps/getting_started/spritesheet.png")
+    app.data['tilemap'] = Tilemap.from_bmp(sprig, "/apps/getting_started_data/spritesheet.bmp")
 
     # Fill the screen with the color black (For better performance you can just sprig.fbuf.fill(0))
     sprig.fbuf.fill(color565(0, 0, 0))

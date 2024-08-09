@@ -9,6 +9,9 @@ if TYPE_CHECKING:
     from sprig import Sprig
 
 def setup(sprig: Sprig):
+    sprig.fbuf.fill(color565(0, 0, 0))
+    sprig.flip_buf()
+
     app.data['menu'] = ListMenu(
         sprig,
         ListMenuItem('', children=[
@@ -38,7 +41,6 @@ def splash_status(_item: ListMenuItem):
 
 def draw():
     if not(app.data['visible']): return
-    app.sprig.fbuf.fill(0)
     app.data['menu'].draw()
     app.sprig.fbuf.text('Settings', 0, 0, color565(255, 0, 255))
     app.sprig.flip_buf()

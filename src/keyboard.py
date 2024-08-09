@@ -10,6 +10,7 @@ class Keyboard:
         self.visible = False
         self.buffer = ''
         self.title = 'Untitled'
+        self._on_key = None
 
         sprig.on_press('w', self._w)
         sprig.on_press('s', self._s)
@@ -62,8 +63,7 @@ class Keyboard:
 
         if self.shift == 1:
             self.shift = 0
-        for x in self._on_key:
-            x(key)
+        self._on_key(key)
         
         self._draw()
 
@@ -98,9 +98,7 @@ class Keyboard:
         self.sprig.flip_buf()
 
     def on_key(self, callback):
-        self._on_key.append(callback)
-
-    _on_key = []
+        self._on_key = callback
 
     LAYOUTS = {
         'QWERTY': [

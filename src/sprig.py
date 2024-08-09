@@ -22,16 +22,14 @@ class Sprig:
         self.buttons = { 'w': { 'pin': Pin(5, Pin.IN, Pin.PULL_UP), 'state': False }, 'a': { 'pin': Pin(6, Pin.IN, Pin.PULL_UP), 'state': False }, 's': { 'pin': Pin(7, Pin.IN, Pin.PULL_UP), 'state': False }, 'd': { 'pin': Pin(8, Pin.IN, Pin.PULL_UP), 'state': False }, 'i': { 'pin': Pin(12, Pin.IN, Pin.PULL_UP), 'state': False }, 'j': { 'pin': Pin(13, Pin.IN, Pin.PULL_UP), 'state': False }, 'k': { 'pin': Pin(14, Pin.IN, Pin.PULL_UP), 'state': False }, 'l': { 'pin': Pin(15, Pin.IN, Pin.PULL_UP), 'state': False} }
         self._onpress = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
         self._onrelease = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
-        self.kb = Keyboard(self, Keyboard.LAYOUTS['WORKMAN'])
+        self.kb = Keyboard(self, Keyboard.LAYOUTS['QWERTY'])
 
         self.lights = [Pin(28, Pin.OUT), Pin(4, Pin.OUT)]
         self.lights[0].high()
 
         self.settings = {
-            "networks": [],
             "autostart": False,
             "splash": True,
-            "wifi": False
         }
 
         if not(self.file_or_dir_exists('/settings.json')):
@@ -69,9 +67,9 @@ class Sprig:
     def update_app_list(self):
         self.apps = []
         for app in os.listdir('/apps'):
-            if app.endswith('.py'):
+            if app.endswith('.py') or app.endswith('.mpy'):
                 print('Found ' + app)
-                temp_app = __import__('/apps/'+ app.replace('.py', '')).app
+                temp_app = __import__('/apps/'+ app.replace('.py', '').replace('.mpy', '')).app
                 self.apps.append({
                     'path': app.replace('.py', ''),
                     'name': ''+ temp_app.name,
@@ -90,21 +88,21 @@ class Sprig:
         try:
             self.app = __import__("/apps/" + path).app
             self.app._setup(self)
-        except Exception:
+        except Exception as e:
             print('Failed to launch ' + appid)
+            print(e)
 
     def loop(self):
         self._input()
         self.app.loop(self)
 
         if self.quit:
-            return True
-        else:
             return False
+        else:
+            return True
 
     def splash(self):
         gc.collect()
-        print(gc.get_stats())
         splash = BMPReader('splash.bmp')
 
         splash_buf = framebuf.FrameBuffer(bytearray(160 * 128 * 2), 160, 128, framebuf.RGB565)
@@ -172,8 +170,6 @@ class Sprig:
         except OSError:
             return False
 
-from png import Reader as PngReader
-
 class Tilemap:
     def __init__(self, sprig: Sprig, width: int, height: int, buf: framebuf.FrameBuffer):
         self.width = width
@@ -191,26 +187,26 @@ class Tilemap:
         self._sprig.fbuf.blit(self._tilebuf, x, y)
 
     @staticmethod
-    def from_bmp(path: str):
+    def from_bmp(sprig: Sprig, path: str):
         reader = BMPReader(path)
         buf = framebuf.FrameBuffer(bytearray(reader.width * reader.height * 2), reader.width, reader.height, framebuf.RGB565)
         for i in range(reader.width * reader.height):
             (pixel, x, y) = reader.read_pixel()
             buf.pixel(pixel, x, y)
 
-        return Tilemap(reader.width, reader.height, buf)
+        return Tilemap(sprig, reader.width, reader.height, buf)
 
-    @staticmethod
-    def from_png(path: str):
-        reader = PngReader(path)
-        (width, height, pixels, metadata) = reader.read_flat()
-        buf = framebuf.FrameBuffer(bytearray(width*height * 2), width, height, framebuf.RGB565)
-        for i in range(width*height):
-            alpha = pixels[i*4+3]
-            pixel = color565(pixels[i*4], pixels[i*4+1], pixels[i*4+2])
-            if alpha < 127:
-                continue
-            buf.pixel(pixel, i%width, math.floor(i/width))
-
-        return Tilemap(reader.width, reader.height, buf)
+    # PNG support seems too difficult without a custom native module
+    #@staticmethod
+    #def from_png(sprig: Sprig, path: str):
+    #    reader = PngReader(filename=path)
+    #    (width, height, pixels, metadata) = reader.read_flat()
+    #    buf = framebuf.FrameBuffer(bytearray(width*height*2), width, height, framebuf.RGB565)
+    #    for i in range(width*height):
+    #        alpha = pixels[i*4+3]
+    #        pixel = color565(pixels[i*4], pixels[i*4+1], pixels[i*4+2])
+    #        if alpha < 127:
+    #            continue
+    #        buf.pixel(pixel, i%width, math.floor(i/width))
+    #    return Tilemap(sprig, reader.width, reader.height, buf)
 
