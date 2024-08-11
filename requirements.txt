@@ -1,1 +1,5 @@
 micropython-rp2-stubs
+adafruit-ampy
+mpy-cross
+watchdog
+setuptools
