@@ -1,24 +1,23 @@
 from ili9341 import color565
-from app import App, ListMenu, ListMenuItem
+from app import App, ListMenu, ListMenuItem, list_apps
 import json
 import os
 
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from sprig import Sprig
-
-def setup(sprig: Sprig):
+def setup():
+    sprig = app.sprig
     sprig.fbuf.fill(color565(0, 0, 0))
     sprig.flip_buf()
 
-    app.on_press('w', w)
-    app.on_press('s', s)
-    app.on_release('k', k_release)
+    sprig.on_press('w', w)
+    sprig.on_press('s', s)
+    sprig.on_press('l', l)
+    sprig.on_release('k', k_release)
 
     applist = []
-    for a in sprig.apps:
+    for a in list_apps():
         applist.append(ListMenuItem(a['name'], activate=launch, extra=a))
     app.data['menu'] = ListMenu(sprig, ListMenuItem('', children=applist), 12, 128-12)
+    app.data['break'] = False
 
     draw()
 
@@ -35,13 +34,16 @@ def s():
     app.data['menu'].down()
     draw()
 
+def l():
+    app.data['break'] = True
+
 def k_release():
     app.data['menu'].activate()
 
 def launch(item: ListMenuItem):
-    app.sprig.launch(item.extra['appid'])
+    app._system.launch(item.extra['appid'])
 
-def loop(sprig: Sprig):
-    pass
+def loop():
+    return app.data['break']
 
 app = App('com.hackclub.sprig.Launcher', 'Launcher', setup, loop)

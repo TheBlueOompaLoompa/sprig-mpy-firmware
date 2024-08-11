@@ -4,13 +4,8 @@ from machine import Pin, SPI
 from bmp_reader import BMPReader
 import framebuf
 import os
-import json
 import gc
-import sys
-import network
 import math
-from time import sleep
-from audio import Audio
 
 class Sprig:
     def __init__(self):
@@ -25,102 +20,23 @@ class Sprig:
         self.kb = Keyboard(self, Keyboard.LAYOUTS['QWERTY'])
 
         self.lights = [Pin(28, Pin.OUT), Pin(4, Pin.OUT)]
-        self.lights[0].high()
-
-        self.settings = {
-            "autostart": False,
-            "splash": True,
-        }
-
-        if not(self.file_or_dir_exists('/settings.json')):
-            open('/settings.json', 'x').close()
-
-        with open('/settings.json') as file:
-            settings = {}
-            try:
-                settings = json.loads(file.read())
-            except ValueError:
-                settings = {}
-
-            for key in dict.keys(self.settings):
-                if key in settings:
-                    self.settings[key] = settings[key]
-            
-            file.close()
-        
-        self.save_settings()
-
-        self.audio = None
-
-        self.app = None
-        self.quit = False
         self.apps = []
-        self.update_app_list()
-        if self.settings['splash']:
-            self.splash()
 
-        self.lights[0].low()
+    def __enter__(self):
+        return self
 
-    def init_audio(self):
-        self.audio = Audio(self)
-
-    def update_app_list(self):
-        self.apps = []
-        for app in os.listdir('/apps'):
-            if app.endswith('.py') or app.endswith('.mpy'):
-                print('Found ' + app)
-                temp_app = __import__('/apps/'+ app.replace('.py', '').replace('.mpy', '')).app
-                self.apps.append({
-                    'path': app.replace('.py', ''),
-                    'name': ''+ temp_app.name,
-                    'appid': ''+ temp_app.appid
-                })
-                del temp_app
-
-    def launch(self, appid: str):
-        del self.app
-        gc.collect()
-        path = ''
-        for app in self.apps:
-            if app['appid'] == appid:
-                path = app['path']
-                break
-        try:
-            self.app = __import__("/apps/" + path).app
-            self.app._setup(self)
-        except Exception as e:
-            print('Failed to launch ' + appid)
-            print(e)
-
-    def loop(self):
-        self._input()
-        self.app.loop(self)
-
-        if self.quit:
-            return False
-        else:
-            return True
-
-    def splash(self):
-        gc.collect()
-        splash = BMPReader('splash.bmp')
-
-        splash_buf = framebuf.FrameBuffer(bytearray(160 * 128 * 2), 160, 128, framebuf.RGB565)
-        for i in range(splash.width*splash.height):
-            (pixel, x, y) = splash.read_pixel()
-            splash_buf.pixel(x, y, pixel & 0xffff)
-
-        offset = 0
-        speed = 16
-        while offset < 160 and offset > -200:
-            self.fbuf.fill(0)
-            self.fbuf.blit(splash_buf, offset, int(math.sin(float(offset)/30.0)*10.0))
-            self.flip_buf()
-            offset += speed
-            speed -= 1
-            sleep(0.01)
-
-        del splash_buf
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.display.cleanup()
+        self.spi.deinit()
+        del self.fbuf
+        del self.display
+        del self.spi
+        del self.kb
+        del self._onpress
+        del self._onrelease
+        del self.buttons
+        del self.lights
+        del self.apps
         gc.collect()
 
     def on_press(self, button: str, callback):
@@ -143,25 +59,15 @@ class Sprig:
     def _input_toggle(self, button):
         if not(self.buttons[button]['pin'].value()) != self.buttons[button]['state']:
             self.buttons[button]['state'] = not(self.buttons[button]['state'])
-            app = self.app
             if self.buttons[button]['state']:
                 for x in self._onpress[button]:
-                    x()
-                for x in app._onpress[button]:
                     x()
             else:
                 for x in self._onrelease[button]:
                     x()
-                for x in app._onrelease[button]:
-                    x()
 
     def flip_buf(self):
         self.display.block(0, 0, 159, 127, self.fbuf)
-
-    def save_settings(self):
-        with open('/settings.json', 'w+') as file:
-            file.write(json.dumps(self.settings))
-            file.close()
 
     def file_or_dir_exists(self, filename):
         try:
@@ -169,6 +75,117 @@ class Sprig:
             return True
         except OSError:
             return False
+
+class Keyboard:
+    def __init__(self, sprig, layout):
+        self.sprig = sprig
+        self.layout = layout
+        self.x = 0
+        self.y = 0
+        self.shift = 0
+        self.visible = False
+        self.buffer = ''
+        self.title = 'Untitled'
+        self._on_key = None
+
+        sprig.on_press('w', self._w)
+        sprig.on_press('s', self._s)
+        sprig.on_press('a', self._a)
+        sprig.on_press('d', self._d)
+        sprig.on_press('k', self._k)
+
+    def _w(self):
+        if self.visible:
+            self.y -= 1
+            if self.y < 0: self.y = len(self.layout[0]) - 1
+            self.x = min(len(self.layout[0][self.y]) - 1, self.x)
+            self._draw()
+
+    def _s(self):
+        if self.visible:
+            self.y += 1
+            if self.y >= len(self.layout[0]): self.y = 0
+            self.x = min(len(self.layout[0][self.y]) - 1, self.x)
+            self._draw()
+
+    def _a(self):
+        if self.visible:
+            self.x -= 1 
+            if self.x < 0: self.x = len(self.layout[0][self.y]) - 1
+            self._draw()
+
+    def _d(self):
+        if self.visible:
+            self.x += 1
+            if self.x >= len(self.layout[0][self.y]): self.x = 0
+            self._draw()
+
+    def _k(self):
+        if not(self.visible): return
+        key = self.layout[1 if self.shift > 0 else 0][self.y][self.x]
+        
+        if key == '\r':
+            self.shift += 1
+            if self.shift > 2:
+                self.shift = 0
+            self._draw()
+            return
+        elif key == '\t':
+            self.buffer = self.buffer[0:max(len(self.buffer)-2, 0)]
+        elif key == '\n':
+            pass
+        else:
+            self.buffer += key
+
+        if self.shift == 1:
+            self.shift = 0
+        self._on_key(key)
+        
+        self._draw()
+
+    def set_visible(self, vis: bool):
+        self.visible = vis
+        if self.visible:
+            self._draw()
+
+    def _draw(self):
+        if not(self.visible): return
+        self.sprig.fbuf.fill(color565(0, 0, 0))
+        vspace = 12
+        hspace = 12
+        self.sprig.fbuf.text(self.title, 0, 0, color565(90, 90, 90))
+        self.sprig.fbuf.text(self.buffer, 0, vspace, color565(255, 255, 255))
+        self.sprig.fbuf.line(len(self.buffer)*8, vspace*2 - 1, len(self.buffer)*8+8, vspace*2 - 1, color565(255, 255, 255))
+
+        for (ry, row) in enumerate(self.layout[1 if self.shift > 0 else 0]):
+            y = ry+2
+            for (x, char) in enumerate(row):
+                color = color565(127, 127, 127) if self.x != x or self.y != ry else color565(0, 255, 0)
+                if char == '\r':
+                    self.sprig.fbuf.text('Shift', 0, y*vspace, color)
+                elif char == ' ':
+                    self.sprig.fbuf.text('Space', 6*8, y*vspace, color)
+                elif char == '\t':
+                    self.sprig.fbuf.text('<-', 12*8, y*vspace, color)
+                elif char == '\n':
+                    self.sprig.fbuf.text('Enter', 15*8, y*vspace, color)
+                else:
+                    self.sprig.fbuf.text(char, x*hspace, y*vspace, color)
+        self.sprig.flip_buf()
+
+    def on_key(self, callback):
+        self._on_key = callback
+
+    LAYOUTS = {
+        'QWERTY': [
+            ['`1234567890-=','qwertyuiop{}\\',"asdfghjkl;'",'zxcvbnm,./','\r \t\n'],
+            ['~!@#$%^&*()_+','QWERTYUIOP{}|','ASDFGHJKL:"','ZXCVBNM<>?','\r \t\n']
+        ],
+        'WORKMAN': [
+            ['`1234567890-=','qdrwbjfup;[]\\',"ashtgyneoi'",'zxmcvkl,./','\r \t\n'],
+            ['~!@#$%^&*()_+','QDRWBJFUP:{}|','ASHTGYNEOI"','ZXMCVKL<>?','\r \t\n']
+        ]
+    }
 
 class Tilemap:
     def __init__(self, sprig: Sprig, width: int, height: int, buf: framebuf.FrameBuffer):
@@ -195,18 +212,4 @@ class Tilemap:
             buf.pixel(pixel, x, y)
 
         return Tilemap(sprig, reader.width, reader.height, buf)
-
-    # PNG support seems too difficult without a custom native module
-    #@staticmethod
-    #def from_png(sprig: Sprig, path: str):
-    #    reader = PngReader(filename=path)
-    #    (width, height, pixels, metadata) = reader.read_flat()
-    #    buf = framebuf.FrameBuffer(bytearray(width*height*2), width, height, framebuf.RGB565)
-    #    for i in range(width*height):
-    #        alpha = pixels[i*4+3]
-    #        pixel = color565(pixels[i*4], pixels[i*4+1], pixels[i*4+2])
-    #        if alpha < 127:
-    #            continue
-    #        buf.pixel(pixel, i%width, math.floor(i/width))
-    #    return Tilemap(sprig, reader.width, reader.height, buf)
 

@@ -1,8 +1,7 @@
 from ili9341 import color565
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from sprig import Sprig
+from sprig import Sprig
+import os
+import json
 
 class App:
     def __init__(self, appid: str, name: str, setup, loop):
@@ -11,21 +10,44 @@ class App:
         self.setup = setup
         self.loop = loop
         self.data = {}
-        self.sprig: Sprig = None
+        self.sprig: Sprig = Sprig()
+        self._system = None
         self._onpress = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
         self._onrelease = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
 
-    def _setup(self, sprig: Sprig):
+    def _setup(self):
         self._onpress = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
         self._onrelease = { 'w': [], 'a': [], 's': [], 'd': [], 'i': [], 'j': [], 'k': [], 'l': []} 
-        self.sprig = sprig
-        return self.setup(sprig)
+        return self.setup()
+
+    def _loop(self):
+        self.sprig._input()
+        return self.loop()
 
     def on_press(self, button: str, callback):
         self._onpress[button].append(callback)
 
     def on_release(self, button: str, callback):
         self._onrelease[button].append(callback)
+
+def list_apps():
+    apps = []
+    for app_dir in os.listdir('/apps'):
+        try:
+            manifest = open_manifest(app_dir)
+            manifest['appid'] = app_dir
+            apps.append(manifest)
+            print('Found app ' + app_dir)
+        except Exception:
+            print('Error: Missing manifest - ' + app_dir)
+
+    return apps
+
+def open_manifest(appid):
+    manifest = None
+    with open('/apps/' + appid + '/manifest.json', 'rt') as manifest_file:
+        manifest = json.loads(manifest_file.read())
+    return manifest
 
 class ListMenu:
     def __init__(self, sprig: Sprig, item: ListMenuItem, offset=0, height=128):

@@ -1,10 +1,8 @@
 import gc
+from system import System
 
-from sprig import Sprig
-sprig = Sprig()
-gc.collect()
-sprig.launch('com.hackclub.sprig.Launcher')
-gc.collect()
+system = System()
+system.launch('com_hackclub_sprig_Launcher')
 
-while sprig.loop():
+while system.app._loop() != True:
     pass
